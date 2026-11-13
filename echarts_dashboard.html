@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MOEX Options Dashboard (Single Tab)</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0e1117;color:#e6edf3;font-family:'Segoe UI',system-ui,sans-serif}
+.header{text-align:center;padding:18px 0 8px;border-bottom:1px solid #21262d}
+.header h1{font-size:22px;font-weight:600;letter-spacing:.5px}
+.header p{color:#8b949e;font-size:13px;margin-top:4px}
+.controls{display:flex;gap:12px;padding:16px 24px;background:#161b22;border-bottom:1px solid #21262d;flex-wrap:wrap;align-items:center}
+.ctrl-group{display:flex;align-items:center;gap:6px}
+.ctrl-group label{color:#8b949e;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+.info-wrap{position:relative;display:inline-flex;align-items:center}
+.info-icon{
+  width:16px;height:16px;border-radius:50%;
+  border:1px solid #3d444d;color:#8b949e;
+  display:inline-flex;align-items:center;justify-content:center;
+  font-size:11px;line-height:1;cursor:help;user-select:none;
+}
+.info-tooltip{
+  position:absolute;top:calc(100% + 6px);left:0;
+  min-width:260px;max-width:320px;
+  padding:8px 10px;border:1px solid #30363d;border-radius:8px;
+  background:#161b22;color:#c9d1d9;font-size:12px;line-height:1.35;
+  box-shadow:0 8px 20px rgba(0,0,0,0.35);
+  display:none;z-index:20;
+}
+.info-wrap:hover .info-tooltip{display:block}
+select,button{background:#0d1117;color:#e6edf3;border:1px solid #30363d;padding:6px 12px;border-radius:6px;font-size:13px}
+button{cursor:pointer}
+button:hover{border-color:#58a6ff}
+select:focus{outline:none;border-color:#58a6ff}
+.meta-badge{margin-left:auto;padding:4px 10px;border:1px solid #30363d;border-radius:999px;color:#8b949e;font-size:12px}
+.draw-tools{display:flex;gap:6px}
+.draw-btn{padding:5px 10px;border-radius:6px;border:1px solid #30363d;background:#0d1117;color:#8b949e;font-size:12px;cursor:pointer}
+.draw-btn.active{background:#1f3a5f;border-color:#58a6ff;color:#58a6ff}
+.draw-btn.danger:hover{border-color:#f85149;color:#f85149}
+.draw-cursor-h{cursor:crosshair !important}
+.draw-cursor-v{cursor:crosshair !important}
+.page{padding:20px 24px}
+.chart-row{display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.chart-box{background:#161b22;border:1px solid #21262d;border-radius:8px;padding:12px;flex:1;min-width:420px}
+.chart-box.full{flex:1 1 100%;min-width:100%}
+.chart-box h3{font-size:13px;color:#8b949e;margin-bottom:8px;font-weight:500}
+.chart{width:100%;height:420px}
+.chart.tall{height:500px}
+.chart.short{height:320px}
+.chart-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+.chart-head h3{margin-bottom:0}
+.chart-tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.chart-tools label{color:#8b949e;font-size:11px}
+.chart-tools select,.chart-tools input{padding:4px 8px;font-size:12px}
+.chart-tools input[type='color']{width:36px;height:28px;padding:2px;background:#0d1117;border:1px solid #30363d;border-radius:6px}
+.table-wrap{max-height:320px;overflow:auto;border:1px solid #21262d;border-radius:8px;background:#161b22}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{background:#21262d;color:#8b949e;padding:8px 10px;text-align:center;position:sticky;top:0}
+td{padding:6px 10px;text-align:center;border-bottom:1px solid #21262d}
+.loading-note,.empty-note{color:#8b949e;font-size:12px;padding:8px 0}
+.hint{color:#8b949e;font-size:12px;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>MOEX Options Dashboard</h1>
+  <p>Одна вкладка. Единый селектор актива для всех графиков.</p>
+</div>
+
+<div class="controls">
+  <div class="ctrl-group"><label>Актив</label><select id="d-asset"></select></div>
+  <div class="ctrl-group">
+    <label title="Влияет на графики Delta/Gamma/Vega/Theta и Открытые позиции">Основная серия</label>
+    <select id="d-series-main" title="Выбор применяется к графикам Delta/Gamma/Vega/Theta и Открытые позиции"></select>
+    <span class="info-wrap" aria-label="Подсказка по селектору основной серии">
+      <span class="info-icon">i</span>
+      <span class="info-tooltip">Выбор основной серии применяется к графикам Delta/Gamma/Vega/Theta и к графику Открытые позиции по страйкам.</span>
+    </span>
+  </div>
+  <button id="d-refresh">Обновить</button>
+  <span class="meta-badge" id="d-meta">Срез: —</span>
+</div>
+
+<div class="page">
+  <div class="chart-row"><div class="chart-box full">
+    <div class="chart-head">
+      <h3>OHLC + Линии отклонения (exp_std)</h3>
+      <div class="chart-tools" id="tools-d-ohlc">
+        <label>Цвет</label><input id="d-ohlc-line-color" type="color" value="#d29922">
+        <label>Тип</label>
+        <select id="d-ohlc-line-style">
+          <option value="solid">Сплошная</option>
+          <option value="dashed">Пунктир</option>
+          <option value="dotted">Точки</option>
+          <option value="dashdot">Пунктир-точки</option>
+        </select>
+        <label>Толщина</label>
+        <select id="d-ohlc-line-width">
+          <option value="1.0">Тонкая</option>
+          <option value="1.5" selected>Средняя</option>
+          <option value="2.0">Толстая</option>
+        </select>
+        <button class="draw-btn" id="d-ohlc-add-h">— H</button>
+        <button class="draw-btn" id="d-ohlc-add-v">| V</button>
+        <button class="draw-btn" id="d-ohlc-del">Удалить выбранную</button>
+        <button class="draw-btn danger" id="d-ohlc-clear">Очистить все</button>
+      </div>
+    </div>
+    <div class="chart tall" id="d-ohlc"></div>
+  </div></div>
+  <div class="chart-row"><div class="chart-box full">
+    <div class="chart-head">
+      <h3>HV 10/20/30 + IV (next month)</h3>
+      <div class="chart-tools" id="tools-d-hv-iv">
+        <label>Цвет</label><input id="d-hv-iv-line-color" type="color" value="#d29922">
+        <label>Тип</label>
+        <select id="d-hv-iv-line-style">
+          <option value="solid">Сплошная</option>
+          <option value="dashed">Пунктир</option>
+          <option value="dotted">Точки</option>
+          <option value="dashdot">Пунктир-точки</option>
+        </select>
+        <label>Толщина</label>
+        <select id="d-hv-iv-line-width">
+          <option value="1.0">Тонкая</option>
+          <option value="1.5" selected>Средняя</option>
+          <option value="2.0">Толстая</option>
+        </select>
+        <button class="draw-btn" id="d-hv-iv-add-h">— H</button>
+        <button class="draw-btn" id="d-hv-iv-add-v">| V</button>
+        <button class="draw-btn" id="d-hv-iv-del">Удалить выбранную</button>
+        <button class="draw-btn danger" id="d-hv-iv-clear">Очистить все</button>
+      </div>
+    </div>
+    <div class="chart" id="d-hv-iv"></div>
+  </div></div>
+  <div class="chart-row"><div class="chart-box full"><h3>Кривая волатильности (Volatility Curve)</h3><div class="chart tall" id="d-curve"></div></div></div>
+  <div class="chart-row"><div class="chart-box full"><h3>Временная структура IV</h3><div class="chart" id="d-time"></div></div></div>
+  <div class="chart-row"><div class="chart-box full"><h3>Улыбка волатильности по сериям (multi-series)</h3><div class="chart tall" id="d-smile"></div></div></div>
+  <div class="chart-row">
+    <div class="chart-box"><h3>Delta</h3><div class="chart short" id="d-delta"></div></div>
+    <div class="chart-box"><h3>Gamma</h3><div class="chart short" id="d-gamma"></div></div>
+  </div>
+  <div class="chart-row">
+    <div class="chart-box"><h3>Vega</h3><div class="chart short" id="d-vega"></div></div>
+    <div class="chart-box"><h3>Theta</h3><div class="chart short" id="d-theta"></div></div>
+  </div>
+  <div class="chart-row"><div class="chart-box full"><h3>Открытые позиции по страйкам (proxy: numtrades)</h3><div class="chart" id="d-oi"></div><div class="hint">Примечание: в текущем ETL используется proxy на базе call_numtrds/put_numtrds.</div></div></div>
+</div>
+
+<script>
+const API='http://localhost:5300/api';
+const COLORS={accent:'#58a6ff',green:'#3fb950',red:'#f85149',orange:'#d29922',purple:'#bc8cff',cyan:'#39d2f5',gray:'#8b949e'};
+const charts={};
+const LS_DRAW_LINES_KEY = 'echarts_draw_lines_v1';
+const LS_ZOOM_KEY = 'echarts_zoom_state_v1';
+const LS_SMILE_LEGEND_KEY = 'echarts_smile_legend_v1';
+const DRAWABLE_CHARTS = new Set(['d-ohlc','d-hv-iv']);
+const drawnLines = {'d-ohlc': [], 'd-hv-iv': []};
+const smileLegendState = {};
+const drawState = {
+  'd-ohlc': {mode:null, selectedLineId:null, draggingLineId:null, justDragged:false, color:'#d29922', style:'solid', width:1.5},
+  'd-hv-iv': {mode:null, selectedLineId:null, draggingLineId:null, justDragged:false, color:'#d29922', style:'solid', width:1.5}
+};
+const zoomState = {'d-ohlc': null, 'd-hv-iv': null};
+
+function C(id){ if(!charts[id]){ charts[id]=echarts.init(document.getElementById(id),null,{renderer:'canvas'}); setTimeout(()=>initDrawing(id),100);} return charts[id];}
+function darkAxis(){return {axisLine:{lineStyle:{color:'#30363d'}},axisLabel:{color:'#8b949e'},splitLine:{lineStyle:{color:'#21262d'}}};}
+function fmtPrice(v){
+  const n = Number(v);
+  if(!isFinite(n)) return '';
+  return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+function fmtCurveValue(v){
+  const n = Number(v);
+  if(!isFinite(n)) return '';
+  const s = n.toFixed(2).replace(/\.00$/,'').replace(/(\.\d)0$/,'$1');
+  return s;
+}
+function setMeta(t){ const el=document.getElementById('d-meta'); if(el) el.textContent=t||'Срез: —';}
+function setLoading(id,t='Загрузка...'){ const el=document.getElementById(id); if(el) el.innerHTML=`<div class="loading-note">${t}</div>`;}
+function setEmpty(id,t='Нет данных'){ const el=document.getElementById(id); if(el) el.innerHTML=`<div class="empty-note">${t}</div>`;}
+async function get(path){ const r=await fetch(API+path); return r.json(); }
+
+function fillSel(id, items, key='asset'){
+  const s=document.getElementById(id); const old=s.value; s.innerHTML='';
+  items.forEach(i=>{ const o=document.createElement('option'); o.value=i[key]; o.textContent=i[key]; s.appendChild(o); });
+  if(items.find(i=>String(i[key])===String(old))) s.value=old;
+  return s.value;
+}
+function fillSelKV(id, items, valueKey='s', textKey='s'){
+  const s=document.getElementById(id); const old=s.value; s.innerHTML='';
+  items.forEach(i=>{ const o=document.createElement('option'); o.value=i[valueKey]; o.textContent=i[textKey]; s.appendChild(o); });
+  if(items.find(i=>String(i[valueKey])===String(old))) s.value=old;
+  return s.value;
+}
+function lineTypeToEcharts(style){
+  if(style === 'dashdot') return [8,4,2,4];
+  if(style === 'dashed') return 'dashed';
+  if(style === 'dotted') return 'dotted';
+  return 'solid';
+}
+
+function loadPersistedLines(){
+  try{
+    const raw = localStorage.getItem(LS_DRAW_LINES_KEY);
+    if(!raw) return;
+    const parsed = JSON.parse(raw);
+    ['d-ohlc','d-hv-iv'].forEach(id=>{
+      const arr = Array.isArray(parsed?.[id]) ? parsed[id] : [];
+      drawnLines[id] = arr
+        .filter(l => l && (l.type === 'h' || l.type === 'v'))
+        .map(l => ({
+          id: String(l.id || `${Date.now()}-${Math.random()}`),
+          type: l.type,
+          value: l.value,
+          color: l.color || '#d29922',
+          style: l.style || 'solid',
+          width: Number(l.width) || 2.5
+        }));
+    });
+  }catch(_e){}
+}
+
+function persistLines(){
+  try{
+    localStorage.setItem(LS_DRAW_LINES_KEY, JSON.stringify({
+      'd-ohlc': drawnLines['d-ohlc'],
+      'd-hv-iv': drawnLines['d-hv-iv']
+    }));
+  }catch(_e){}
+}
+
+function loadPersistedZoom(){
+  try{
+    const raw = localStorage.getItem(LS_ZOOM_KEY);
+    if(!raw) return;
+    const parsed = JSON.parse(raw);
+    ['d-ohlc','d-hv-iv'].forEach(id=>{
+      const z = parsed?.[id];
+      if(z && Number.isFinite(z.start) && Number.isFinite(z.end)){
+        zoomState[id] = {start:Number(z.start), end:Number(z.end)};
+      }
+    });
+  }catch(_e){}
+}
+
+function persistZoom(){
+  try{
+    localStorage.setItem(LS_ZOOM_KEY, JSON.stringify(zoomState));
+  }catch(_e){}
+}
+
+function loadPersistedSmileLegend(){
+  try{
+    const raw = localStorage.getItem(LS_SMILE_LEGEND_KEY);
+    if(!raw) return;
+    const parsed = JSON.parse(raw);
+    if(parsed && typeof parsed === 'object'){
+      Object.keys(parsed).forEach(asset=>{
+        if(parsed[asset] && typeof parsed[asset] === 'object'){
+          smileLegendState[asset] = parsed[asset];
+        }
+      });
+    }
+  }catch(_e){}
+}
+
+function persistSmileLegend(){
+  try{
+    localStorage.setItem(LS_SMILE_LEGEND_KEY, JSON.stringify(smileLegendState));
+  }catch(_e){}
+}
+
+function getZoomConfig(chartId){
+  const z = zoomState[chartId];
+  return {
+    type:'slider',
+    xAxisIndex:[0],
+    bottom:5,
+    height:20,
+    borderColor:'#30363d',
+    backgroundColor:'#161b22',
+    fillerColor:'rgba(88,166,255,0.1)',
+    handleStyle:{color:'#58a6ff'},
+    textStyle:{color:'#8b949e'},
+    start: z?.start ?? 0,
+    end: z?.end ?? 100
+  };
+}
+
+function bindZoomPersistence(chartId){
+  const c = charts[chartId];
+  if(!c || c._zoomBound) return;
+  c._zoomBound = true;
+  c.on('datazoom', ()=>{
+    const opt = c.getOption();
+    const dz = opt?.dataZoom?.[0];
+    if(!dz) return;
+    if(Number.isFinite(dz.start) && Number.isFinite(dz.end)){
+      zoomState[chartId] = {start:Number(dz.start), end:Number(dz.end)};
+      persistZoom();
+    }
+  });
+}
+
+function syncStyleFromControls(chartId){
+  const colorEl = document.getElementById(`${chartId}-line-color`);
+  const styleEl = document.getElementById(`${chartId}-line-style`);
+  const widthEl = document.getElementById(`${chartId}-line-width`);
+  if(!drawState[chartId]) return;
+  if(colorEl) drawState[chartId].color = colorEl.value || '#d29922';
+  if(styleEl) drawState[chartId].style = styleEl.value || 'solid';
+  if(widthEl) drawState[chartId].width = Number(widthEl.value) || 1.5;
+}
+
+function applyChartCursor(chartId){
+  const c = charts[chartId];
+  if(!c) return;
+  const dom = c.getDom();
+  dom.classList.remove('draw-cursor-h','draw-cursor-v');
+  const mode = drawState[chartId]?.mode;
+  if(mode) dom.classList.add(mode === 'h' ? 'draw-cursor-h' : 'draw-cursor-v');
+}
+
+function setDrawForChart(chartId, mode){
+  if(!drawState[chartId]) return;
+  drawState[chartId].mode = (drawState[chartId].mode === mode ? null : mode);
+  const hBtn = document.getElementById(`${chartId}-add-h`);
+  const vBtn = document.getElementById(`${chartId}-add-v`);
+  if(hBtn) hBtn.classList.toggle('active', drawState[chartId].mode === 'h');
+  if(vBtn) vBtn.classList.toggle('active', drawState[chartId].mode === 'v');
+  applyChartCursor(chartId);
+}
+
+function clearLinesForChart(chartId){
+  if(!drawnLines[chartId]) return;
+  drawnLines[chartId] = [];
+  if(drawState[chartId]){
+    drawState[chartId].selectedLineId = null;
+    drawState[chartId].draggingLineId = null;
+  }
+  persistLines();
+  reapplyUserLines(chartId);
+}
+
+function deleteSelectedLine(chartId){
+  const st = drawState[chartId];
+  if(!st || !drawnLines[chartId]) return;
+  if(!st.selectedLineId) return;
+  drawnLines[chartId] = drawnLines[chartId].filter(l => l.id !== st.selectedLineId);
+  st.selectedLineId = null;
+  persistLines();
+  reapplyUserLines(chartId);
+}
+
+function buildUserMarkLines(id){
+  const st = drawState[id];
+  return (drawnLines[id]||[]).map(l=>{
+    const selected = st && st.selectedLineId === l.id;
+    const base = {
+      _user:true,
+      _lineId:l.id,
+      lineStyle:{color:l.color,width:selected ? (Number(l.width || 1.5) + 0.5) : Number(l.width || 1.5),type:lineTypeToEcharts(l.style)},
+      label:{show:false}
+    };
+    return l.type==='h' ? {...base, yAxis:l.value} : {...base, xAxis:l.value};
+  });
+}
+function reapplyUserLines(id){
+  if(!DRAWABLE_CHARTS.has(id)) return;
+  const c=charts[id]; if(!c) return;
+  const opt=c.getOption(); if(!opt.series||!opt.series.length) return;
+  const base=(opt.series[0].markLine&&opt.series[0].markLine.data||[]).filter(d=>!d._user);
+  c.setOption({series:[{markLine:{silent:false,symbol:'none',data:[...base,...buildUserMarkLines(id)],animation:false}}]}, false);
+}
+function addLineToChart(id,c,type,value){
+  if(!DRAWABLE_CHARTS.has(id)) return;
+  syncStyleFromControls(id);
+  const st = drawState[id];
+  const line = {id:`${Date.now()}-${Math.random()}`, type, value, color:st.color, style:st.style, width:st.width};
+  drawnLines[id].push(line);
+  st.selectedLineId = line.id;
+  persistLines();
+  reapplyUserLines(id);
+}
+
+function findNearestLine(id, px){
+  const c = charts[id];
+  const lines = drawnLines[id] || [];
+  if(!c || !lines.length) return null;
+  const threshold = 8;
+  let best = null;
+  lines.forEach(l=>{
+    let dist = Number.POSITIVE_INFINITY;
+    if(l.type === 'h'){
+      const y = c.convertToPixel({yAxisIndex:0}, l.value);
+      if(y != null && Number.isFinite(y)) dist = Math.abs(px[1] - y);
+    } else {
+      const x = c.convertToPixel({xAxisIndex:0}, l.value);
+      if(x != null && Number.isFinite(x)) dist = Math.abs(px[0] - x);
+    }
+    if(dist <= threshold && (!best || dist < best.dist)) best = {line:l, dist};
+  });
+  return best ? best.line : null;
+}
+
+function fromPixelToLineValue(id, type, px){
+  const c = charts[id];
+  if(!c) return null;
+  if(type === 'h'){
+    const y = c.convertFromPixel({yAxisIndex:0}, px[1]);
+    return (y != null && isFinite(y)) ? Number(y) : null;
+  }
+  const opt = c.getOption();
+  const xType = opt?.xAxis?.[0]?.type;
+  if(xType === 'category'){
+    const idxRaw = c.convertFromPixel({xAxisIndex:0}, px[0]);
+    const idx = Math.round(Number(idxRaw));
+    const xData = opt?.xAxis?.[0]?.data || [];
+    const maxRealIdx = xData.map((v,i)=>String(v).startsWith('__pad_') ? -1 : i).reduce((a,b)=>Math.max(a,b), -1);
+    if(maxRealIdx < 0) return null;
+    const clamped = Math.max(0, Math.min(maxRealIdx, idx));
+    return xData[clamped];
+  }
+  const x = c.convertFromPixel({xAxisIndex:0}, px[0]);
+  return (x != null && isFinite(x)) ? Number(x) : null;
+}
+
+function initDrawing(id){
+  if(!DRAWABLE_CHARTS.has(id)) return;
+  const c=charts[id]; if(!c||c._drawBound) return; c._drawBound=true;
+  const st = drawState[id];
+  const zr = c.getZr();
+
+  zr.on('mousedown', params=>{
+    if(st.mode) return;
+    const line = findNearestLine(id, [params.offsetX, params.offsetY]);
+    if(!line) return;
+    st.draggingLineId = line.id;
+    st.selectedLineId = line.id;
+    st.justDragged = false;
+    reapplyUserLines(id);
+  });
+
+  zr.on('mousemove', params=>{
+    if(!st.draggingLineId) return;
+    const line = (drawnLines[id]||[]).find(x=>x.id===st.draggingLineId);
+    if(!line) return;
+    const next = fromPixelToLineValue(id, line.type, [params.offsetX, params.offsetY]);
+    if(next == null) return;
+    line.value = next;
+    st.justDragged = true;
+    persistLines();
+    reapplyUserLines(id);
+  });
+
+  zr.on('mouseup', ()=>{
+    st.draggingLineId = null;
+    applyChartCursor(id);
+  });
+
+  zr.on('globalout', ()=>{
+    st.draggingLineId = null;
+  });
+
+  c.getZr().on('click',params=>{
+    if(st.justDragged){ st.justDragged = false; return; }
+    if(st.mode){
+      const value = fromPixelToLineValue(id, st.mode, [params.offsetX, params.offsetY]);
+      if(value != null) addLineToChart(id,c,st.mode,value);
+      return;
+    }
+    const hit = findNearestLine(id, [params.offsetX, params.offsetY]);
+    st.selectedLineId = hit ? hit.id : null;
+    reapplyUserLines(id);
+  });
+}
+
+function initLineTools(){
+  ['d-ohlc','d-hv-iv'].forEach(id=>{
+    const colorEl = document.getElementById(`${id}-line-color`);
+    const styleEl = document.getElementById(`${id}-line-style`);
+    const widthEl = document.getElementById(`${id}-line-width`);
+    if(colorEl) colorEl.addEventListener('change', ()=>syncStyleFromControls(id));
+    if(styleEl) styleEl.addEventListener('change', ()=>syncStyleFromControls(id));
+    if(widthEl) widthEl.addEventListener('change', ()=>syncStyleFromControls(id));
+    const hBtn = document.getElementById(`${id}-add-h`);
+    const vBtn = document.getElementById(`${id}-add-v`);
+    const delBtn = document.getElementById(`${id}-del`);
+    const clearBtn = document.getElementById(`${id}-clear`);
+    if(hBtn) hBtn.addEventListener('click', ()=>setDrawForChart(id,'h'));
+    if(vBtn) vBtn.addEventListener('click', ()=>setDrawForChart(id,'v'));
+    if(delBtn) delBtn.addEventListener('click', ()=>deleteSelectedLine(id));
+    if(clearBtn) clearBtn.addEventListener('click', ()=>clearLinesForChart(id));
+    if(colorEl) colorEl.value = drawState[id].color;
+    if(styleEl) styleEl.value = drawState[id].style;
+    if(widthEl) widthEl.value = String(drawState[id].width);
+    syncStyleFromControls(id);
+  });
+}
+
+async function loadAssets(){
+  const res=await get('/v1/options/assets?table=option_std');
+  const assets=(res&&res.ok&&res.data)?res.data:[];
+  fillSel('d-asset', assets, 'asset');
+  const sel=document.getElementById('d-asset');
+  if(Array.from(sel.options).some(o=>o.value==='SI')) sel.value='SI';
+}
+
+async function loadSeries(){
+  const asset=document.getElementById('d-asset').value;
+  const res=await get('/v1/dashboard/series?asset='+asset);
+  const rows=(res&&res.ok&&res.data)?res.data:[];
+  fillSelKV('d-series-main', rows, 's', 's');
+}
+
+async function renderOHLC(){
+  const asset=document.getElementById('d-asset').value;
+  const res=await get('/v1/dashboard/ohlc?asset='+asset);
+  const d=(res&&res.ok&&res.data)?res.data:[];
+  if(!d.length) return;
+  const dates=d.map(x=>x.tradedate), up=d.map(x=>x.up), down=d.map(x=>x.down);
+  const rightPadCandles = 5;
+  const padLabels = Array.from({length:rightPadCandles}, (_,i)=>`__pad_${i}`);
+  const datesWithPad = [...dates, ...padLabels];
+  const upWithPad = [...up, ...Array(rightPadCandles).fill(null)];
+  const downWithPad = [...down, ...Array(rightPadCandles).fill(null)];
+  const lastIdx = dates.length - 1;
+  const upLast = up[lastIdx];
+  const downLast = down[lastIdx];
+  const closeLast = d[lastIdx]?.last;
+  const ohlc=[...d.map(x=>[x.open,x.last,x.low,x.high]), ...Array(rightPadCandles).fill([null,null,null,null])];
+  C('d-ohlc').setOption({
+    tooltip:{trigger:'axis'},
+    xAxis:{type:'category',data:datesWithPad,...darkAxis(),axisLabel:{color:'#8b949e',formatter:(v)=>String(v).startsWith('__pad_')?'':v}},
+    yAxis:{type:'value',scale:true,position:'right',...darkAxis(),axisLabel:{color:'#8b949e',formatter:(v)=>fmtPrice(v)}},
+    series:[
+      {name:'OHLC',type:'candlestick',data:ohlc,itemStyle:{color:COLORS.green,color0:COLORS.red,borderColor:COLORS.green,borderColor0:COLORS.red}},
+      {
+        name:'UP',type:'line',data:upWithPad,symbol:'none',smooth:true,
+        lineStyle:{color:COLORS.green,width:1.5},
+        markPoint:{symbol:'circle',symbolSize:1,data:[{coord:[dates[lastIdx],upLast],value:upLast,label:{show:true,position:'right',formatter:()=>fmtPrice(upLast),color:COLORS.green,fontWeight:'bold'}}]}
+      },
+      {
+        name:'DOWN',type:'line',data:downWithPad,symbol:'none',smooth:true,
+        lineStyle:{color:COLORS.red,width:1.5},
+        markPoint:{symbol:'circle',symbolSize:1,data:[{coord:[dates[lastIdx],downLast],value:downLast,label:{show:true,position:'right',formatter:()=>fmtPrice(downLast),color:COLORS.red,fontWeight:'bold'}}]}
+      },
+      {
+        name:'CLOSE',type:'scatter',
+        data:[{value:[dates[lastIdx], closeLast]}],
+        symbolSize:4,itemStyle:{color:'#f5a623'},
+        label:{show:true,position:'right',formatter:()=>fmtPrice(closeLast),color:'#f5a623',fontWeight:'bold'}
+      }
+    ],
+    dataZoom:[getZoomConfig('d-ohlc')],
+    grid:{left:60,right:110,top:20,bottom:55,containLabel:true},backgroundColor:'transparent'
+  }, true);
+  bindZoomPersistence('d-ohlc');
+  reapplyUserLines('d-ohlc');
+}
+
+async function renderHVIV(){
+  const asset=document.getElementById('d-asset').value;
+  const res=await get('/v1/dashboard/hv-iv?asset='+asset);
+  const d=(res&&res.ok&&res.data)?res.data:[];
+  if(!d.length) return;
+  const dates=d.map(x=>x.tradedate);
+  const rightPadCandles = 5;
+  const padLabels = Array.from({length:rightPadCandles}, (_,i)=>`__pad_${i}`);
+  const datesWithPad = [...dates, ...padLabels];
+  const hv10 = [...d.map(x=>x.hv_10), ...Array(rightPadCandles).fill(null)];
+  const hv20 = [...d.map(x=>x.hv_20), ...Array(rightPadCandles).fill(null)];
+  const hv30 = [...d.map(x=>x.hv_30), ...Array(rightPadCandles).fill(null)];
+  const ivNext = [...d.map(x=>x.iv_next_month), ...Array(rightPadCandles).fill(null)];
+  const lastIdx = dates.length - 1;
+  const hv10Last = d[lastIdx]?.hv_10;
+  const hv20Last = d[lastIdx]?.hv_20;
+  const hv30Last = d[lastIdx]?.hv_30;
+  const ivNextLast = d[lastIdx]?.iv_next_month;
+  const hv10MarkData = (hv10Last == null) ? [] : [{coord:[dates[lastIdx],hv10Last],value:hv10Last,label:{show:true,position:'right',formatter:()=>Number(hv10Last).toFixed(2),color:COLORS.accent,fontWeight:'bold'}}];
+  const hv20MarkData = (hv20Last == null) ? [] : [{coord:[dates[lastIdx],hv20Last],value:hv20Last,label:{show:true,position:'right',formatter:()=>Number(hv20Last).toFixed(2),color:COLORS.red,fontWeight:'bold'}}];
+  const hv30MarkData = (hv30Last == null) ? [] : [{coord:[dates[lastIdx],hv30Last],value:hv30Last,label:{show:true,position:'right',formatter:()=>Number(hv30Last).toFixed(2),color:COLORS.green,fontWeight:'bold'}}];
+  const ivNextMarkData = (ivNextLast == null) ? [] : [{coord:[dates[lastIdx],ivNextLast],value:ivNextLast,label:{show:true,position:'right',formatter:()=>Number(ivNextLast).toFixed(2),color:COLORS.purple,fontWeight:'bold'}}];
+  C('d-hv-iv').setOption({
+    tooltip:{trigger:'axis'},
+    legend:{
+      show:true,
+      textStyle:{color:COLORS.gray},
+      top:6,
+      left:'center',
+      orient:'horizontal',
+      itemWidth:20,
+      itemHeight:2,
+      selectedMode:'multiple',
+      data:['HV_10','HV_20','HV_30','IV_NEXT']
+    },
+    xAxis:{type:'category',data:datesWithPad,...darkAxis(),axisLabel:{color:'#8b949e',formatter:(v)=>String(v).startsWith('__pad_')?'':v}},
+    yAxis:{type:'value',name:'%',position:'right',...darkAxis()},
+    series:[
+      {name:'HV_10',type:'line',data:hv10,symbol:'none',showSymbol:false,lineStyle:{color:COLORS.accent},markPoint:{symbol:'circle',symbolSize:1,data:hv10MarkData}},
+      {name:'HV_20',type:'line',data:hv20,symbol:'none',showSymbol:false,lineStyle:{color:COLORS.red},markPoint:{symbol:'circle',symbolSize:1,data:hv20MarkData}},
+      {
+        name:'HV_30',type:'line',data:hv30,symbol:'none',showSymbol:false,lineStyle:{color:COLORS.green},
+        markPoint:{symbol:'circle',symbolSize:1,data:hv30MarkData}
+      },
+      {
+        name:'IV_NEXT',type:'line',data:ivNext,symbol:'none',showSymbol:false,lineStyle:{color:COLORS.purple,width:2},
+        markPoint:{symbol:'circle',symbolSize:1,data:ivNextMarkData}
+      }
+    ],
+    dataZoom:[getZoomConfig('d-hv-iv')],
+    grid:{left:60,right:110,top:42,bottom:55,containLabel:true},backgroundColor:'transparent'
+  }, true);
+  bindZoomPersistence('d-hv-iv');
+  reapplyUserLines('d-hv-iv');
+}
+
+async function renderCurve(){
+  const asset=document.getElementById('d-asset').value;
+  const res=await get('/v1/dashboard/curve?asset='+asset);
+  const d=(res&&res.ok&&res.data)?res.data:[];
+  if(!d.length) return;
+  setMeta(`Срез: ${res.meta?.today || '—'} | Актив: ${asset}`);
+  const categories = d.map(x=>x.delta_type);
+  const currentValues = d.map(x=>x.current_value);
+  const upValues = d.map(x=>x.up);
+  const downValues = d.map(x=>x.down);
+  const allVals = [...currentValues, ...upValues, ...downValues].map(Number).filter(v=>isFinite(v));
+  const minV = Math.min(...allVals);
+  const maxV = Math.max(...allVals);
+  const span = Math.max(maxV - minV, 0.01);
+  const pad = span * 0.08;
+  const yMin = minV - pad;
+  const yMax = maxV + pad;
+  C('d-curve').setOption({
+    tooltip:{trigger:'axis'},
+    legend:{textStyle:{color:COLORS.gray},top:6,left:'center',data:['current_value','up','down']},
+    xAxis:{type:'category',data:categories,...darkAxis()},
+    yAxis:{type:'value',position:'right',min:yMin,max:yMax,...darkAxis()},
+    series:[
+      {
+        name:'current_value',
+        type:'line',
+        smooth:true,
+        data:currentValues,
+        lineStyle:{color:COLORS.red,width:2},
+        symbol:'circle',
+        symbolSize:6,
+        itemStyle:{color:'#0e1117',borderColor:COLORS.red,borderWidth:2},
+        label:{show:true,position:'top',offset:[0,-14],distance:6,color:COLORS.red,fontSize:12,fontWeight:600,formatter:(p)=>fmtCurveValue(p.value)},
+        labelLayout:{moveOverlap:'shiftY'}
+      },
+      {
+        name:'up',
+        type:'line',
+        smooth:true,
+        data:upValues,
+        lineStyle:{color:'#a8d08d',width:2,type:'dashed'},
+        symbol:'circle',
+        symbolSize:6,
+        itemStyle:{color:'#0e1117',borderColor:'#a8d08d',borderWidth:2},
+        label:{show:true,position:'top',offset:[0,-2],distance:6,color:'#a8d08d',fontSize:12,fontWeight:600,formatter:(p)=>fmtCurveValue(p.value)},
+        labelLayout:{moveOverlap:'shiftY'}
+      },
+      {
+        name:'down',
+        type:'line',
+        smooth:true,
+        data:downValues,
+        lineStyle:{color:'#8ec3eb',width:2,type:'dashed'},
+        symbol:'circle',
+        symbolSize:6,
+        itemStyle:{color:'#0e1117',borderColor:'#8ec3eb',borderWidth:2},
+        label:{show:true,position:'top',offset:[0,10],distance:6,color:'#8ec3eb',fontSize:12,fontWeight:600,formatter:(p)=>fmtCurveValue(p.value)},
+        labelLayout:{moveOverlap:'shiftY'}
+      }
+    ],
+    grid:{left:60,right:110,top:45,bottom:45,containLabel:true},
+    backgroundColor:'transparent'
+  }, true);
+}
+
+async function renderTimeStructure(){
+  const asset=document.getElementById('d-asset').value;
+  const res=await get('/v1/dashboard/time-structure?asset='+asset);
+  const d=(res&&res.ok&&res.data)?res.data:[];
+  if(!d.length) return;
+  const labels = d.map(x=>{
+    const dt = new Date(x.expiration_date);
+    if(Number.isNaN(dt.getTime())) return x.expiration_date;
+    return dt.toLocaleString('ru-RU', {month:'long', year:'numeric'});
+  });
+  const vals = d.map(x=>Number(x.volatility)).filter(v=>isFinite(v));
+  const minV = Math.min(...vals);
+  const maxV = Math.max(...vals);
+  const span = Math.max(maxV - minV, 0.01);
+  const pad = span * 0.08;
+  const yMin = Math.floor(minV - pad);
+  const yMax = Math.ceil(maxV + pad);
+  C('d-time').setOption({
+    tooltip:{trigger:'axis'},
+    legend:{top:6,left:'center',textStyle:{color:COLORS.gray},data:['IV term']},
+    xAxis:{type:'category',data:labels,...darkAxis(),axisLabel:{color:COLORS.gray}},
+    yAxis:{type:'value',position:'right',name:'IV, %',min:yMin,max:yMax,...darkAxis(),axisLabel:{color:COLORS.gray,formatter:(v)=>String(Math.round(Number(v)))}},
+    series:[{
+      name:'IV term',
+      type:'line',
+      smooth:true,
+      data:d.map(x=>x.volatility),
+      symbol:'circle',
+      symbolSize:6,
+      lineStyle:{color:'#f08080',width:2},
+      itemStyle:{color:'#0e1117',borderColor:'#f08080',borderWidth:2},
+      areaStyle:{color:'rgba(240,128,128,0.45)'},
+      label:{show:true,position:'top',color:'#cfd6dd',fontSize:12,formatter:(p)=>fmtCurveValue(p.value)}
+    }],
+    grid:{left:60,right:110,top:45,bottom:55,containLabel:true},
+    backgroundColor:'transparent'
+  }, true);
+  reapplyUserLines('d-time');
+}
+
+async function renderSmile(){
+  const asset=document.getElementById('d-asset').value;
+  const res=await get('/v1/dashboard/smile?asset='+asset);
+  const d=(res&&res.ok&&res.data)?res.data:[];
+  if(!d.length) return;
+  const grouped={}; d.forEach(x=>{ if(!grouped[x.optionseries_code]) grouped[x.optionseries_code]=[]; grouped[x.optionseries_code].push(x); });
+  const palette=['#58a6ff','#3fb950','#f85149','#d29922','#bc8cff','#39d2f5','#f0883e','#a5d6ff','#7ee787','#ff7b72'];
+  const seriesNames = Object.keys(grouped);
+  const saved = smileLegendState[asset] || {};
+  const selected = {};
+  seriesNames.forEach(name => { selected[name] = (saved[name] !== undefined ? !!saved[name] : true); });
+  const series=Object.entries(grouped).map(([n,pts],i)=>{
+    const clr = palette[i%palette.length];
+    return {
+      name:n,
+      type:'line',
+      smooth:true,
+      data:pts.map(p=>[p.strike,p.volatility]),
+      lineStyle:{width:2,color:clr},
+      itemStyle:{color:clr},
+      endLabel:{show:true,formatter:()=>n,color:clr,fontSize:11,fontWeight:600},
+      labelLayout:{moveOverlap:'shiftY'}
+    };
+  });
+  const visibleNames = seriesNames.filter(name => selected[name] !== false);
+  const points = d.filter(row => visibleNames.includes(row.optionseries_code));
+  const xVals = points.map(p => Number(p.strike)).filter(v => isFinite(v));
+  const yVals = points.map(p => Number(p.volatility)).filter(v => isFinite(v));
+  const xMinRaw = xVals.length ? Math.min(...xVals) : 0;
+  const xMaxRaw = xVals.length ? Math.max(...xVals) : 1;
+  const yMinRaw = yVals.length ? Math.min(...yVals) : 0;
+  const yMaxRaw = yVals.length ? Math.max(...yVals) : 1;
+  const xSpan = Math.max(xMaxRaw - xMinRaw, 1);
+  const ySpan = Math.max(yMaxRaw - yMinRaw, 0.1);
+  const xPad = xSpan * 0.08;
+  const yPad = ySpan * 0.08;
+  const smileChart = C('d-smile');
+  smileChart.setOption({
+    tooltip:{trigger:'axis'},
+    legend:{textStyle:{color:COLORS.gray},top:6,left:'center',type:'scroll',selected,selectedMode:'multiple'},
+    xAxis:{type:'value',name:'Strike',scale:true,min:xMinRaw - xPad,max:xMaxRaw + xPad,...darkAxis()},
+    yAxis:{type:'value',name:'IV, %',position:'right',scale:true,min:yMinRaw - yPad,max:yMaxRaw + yPad,...darkAxis()},
+    series,
+    grid:{left:110,right:110,top:45,bottom:55,containLabel:true},
+    backgroundColor:'transparent'
+  }, true);
+  if(!smileChart._legendPersistBound){
+    smileChart._legendPersistBound = true;
+    smileChart.on('legendselectchanged', (params)=>{
+      const currentAsset = document.getElementById('d-asset').value;
+      smileLegendState[currentAsset] = params.selected || {};
+      persistSmileLegend();
+    });
+  }
+  smileLegendState[asset] = selected;
+  persistSmileLegend();
+  reapplyUserLines('d-smile');
+}
+
+async function renderGreeks(){
+  const asset=document.getElementById('d-asset').value;
+  const series=document.getElementById('d-series-main').value;
+  if(!series) return;
+  const res=await get('/v1/dashboard/greeks?asset='+asset+'&series='+encodeURIComponent(series));
+  const d=(res&&res.ok&&res.data)?res.data:[];
+  if(!d.length){ return; }
+  const strikes=d.map(x=>x.strike);
+  [['delta','d-delta'],['gamma','d-gamma'],['vega','d-vega'],['theta','d-theta']].forEach(([g,id])=>{
+    C(id).setOption({
+      tooltip:{trigger:'axis'}, legend:{textStyle:{color:COLORS.gray},bottom:0},
+      xAxis:{type:'category',data:strikes,...darkAxis()}, yAxis:{type:'value',position:'right',...darkAxis()},
+      series:[
+        {name:'Call',type:'line',smooth:true,data:d.map(x=>x['call_'+g]),lineStyle:{color:COLORS.green},itemStyle:{color:COLORS.green}},
+        {name:'Put',type:'line',smooth:true,data:d.map(x=>x['put_'+g]),lineStyle:{color:COLORS.red},itemStyle:{color:COLORS.red}}
+      ],
+      grid:{left:60,right:30,top:10,bottom:35},backgroundColor:'transparent'
+    }, true);
+    reapplyUserLines(id);
+  });
+}
+
+async function renderOI(){
+  const asset=document.getElementById('d-asset').value;
+  const series=document.getElementById('d-series-main').value;
+  if(!series) return;
+  const res=await get('/v1/dashboard/oi?asset='+asset+'&series='+encodeURIComponent(series));
+  const d=(res&&res.ok&&res.data)?res.data:[];
+  if(!d.length) return;
+  C('d-oi').setOption({
+    tooltip:{trigger:'axis'}, legend:{textStyle:{color:COLORS.gray},bottom:0},
+    xAxis:{type:'category',data:d.map(x=>x.strike),...darkAxis()},
+    yAxis:{type:'value',position:'right',...darkAxis()},
+    series:[
+      {name:'Call numtrds',type:'bar',data:d.map(x=>x.call_numtrds),itemStyle:{color:COLORS.accent}},
+      {name:'Put numtrds',type:'bar',data:d.map(x=>x.put_numtrds),itemStyle:{color:COLORS.purple}},
+      {name:'Total',type:'line',data:d.map(x=>x.total_numtrds),lineStyle:{color:COLORS.orange,width:2},itemStyle:{color:COLORS.orange}}
+    ],
+    grid:{left:60,right:30,top:20,bottom:45},backgroundColor:'transparent'
+  }, true);
+  reapplyUserLines('d-oi');
+}
+
+async function renderAll(){
+  setLoading('d-table','Загрузка...');
+  await Promise.all([renderOHLC(),renderHVIV(),renderCurve(),renderTimeStructure(),renderSmile(),renderGreeks(),renderOI()]);
+}
+
+document.getElementById('d-asset').addEventListener('change', async ()=>{ await loadSeries(); await renderAll(); });
+document.getElementById('d-series-main').addEventListener('change', async ()=>{ await renderGreeks(); await renderOI(); });
+document.getElementById('d-refresh').addEventListener('click', renderAll);
+window.addEventListener('resize',()=>Object.values(charts).forEach(c=>c.resize()));
+
+async function init(){
+  loadPersistedLines();
+  loadPersistedZoom();
+  loadPersistedSmileLegend();
+  initLineTools();
+  await loadAssets();
+  await loadSeries();
+  await renderAll();
+}
+init();
+</script>
+</body>
+</html>

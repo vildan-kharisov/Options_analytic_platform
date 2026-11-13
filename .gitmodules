@@ -1,0 +1,3 @@
+[submodule "AirFlow-main"]
+	path = AirFlow-main
+	url = https://github.com/vildan-kharisov/AirFlow.git
